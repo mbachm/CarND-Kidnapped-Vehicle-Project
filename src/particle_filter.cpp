@@ -20,6 +20,7 @@
 using namespace std;
 
 void ParticleFilter::init(double x, double y, double theta, double std[]) {
+  
   //set number of particles
   num_particles = 1000;
   
@@ -27,14 +28,14 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
   normal_distribution<double> dist_x(x, std[0]);
   normal_distribution<double> dist_y(y, std[1]);
   normal_distribution<double> dist_theta(theta, std[2]);
-  //default random number generator
-  default_random_engine gen;
   
   particles = vector<Particle>(num_particles);
   weights = vector<double>(num_particles);
   
   //Initalize particles for complete list
   for(int i = 0; i< num_particles; i++) {
+    //new number generator for each run
+    std::default_random_engine gen;
     particles[i].x = dist_x(gen);
     particles[i].y = dist_y(gen);
     particles[i].theta = dist_theta(gen);
@@ -46,11 +47,41 @@ void ParticleFilter::init(double x, double y, double theta, double std[]) {
 }
 
 void ParticleFilter::prediction(double delta_t, double std_pos[], double velocity, double yaw_rate) {
-  // TODO: Add measurements to each particle and add random Gaussian noise.
-  // NOTE: When adding noise you may find std::normal_distribution and std::default_random_engine useful.
-  //  http://en.cppreference.com/w/cpp/numeric/random/normal_distribution
-  //  http://www.cplusplus.com/reference/random/default_random_engine/
+
+  //noise
+  double std_x = std_pos[0];
+  double std_y = std_pos[1];
+  double std_theta = std_pos[2];
   
+  for(Particle particle: particles) {
+    //new number generator for each run
+    std::default_random_engine gen;
+    
+    //safe theta just for safety
+    const double theta = particle.theta;
+    normal_distribution<double> dist_x(particle.x, std_x);
+    normal_distribution<double> dist_y(particle.y, std_y);
+    normal_distribution<double> dist_theta(particle.theta, std_theta);
+    
+    particle.x = dist_x(gen);
+    particle.y = dist_y(gen);
+    particle.theta = dist_theta(gen);
+    
+    //check if yaw_rate is zero (or too near zero)
+    //like discussed in motion model lesson 12
+    if(fabs(yaw_rate) > 0.001) {
+      const double c0 = velocity / yaw_rate;
+      const double c1 = yaw_rate * delta_t;
+      particle.x += c0 * (sin(theta + c1) - sin(theta));
+      particle.y += c0 * (cos(theta)- cos(theta + c1));
+      particle.theta += c1;
+    }
+    else {
+      const double distance_in_time = velocity * delta_t;
+      particle.x += distance_in_time * cos(yaw_rate);
+      particle.y += distance_in_time * sin(yaw_rate);
+    }
+  }
 }
 
 void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::vector<LandmarkObs>& observations) {
