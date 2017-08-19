@@ -37,6 +37,30 @@ private:
   // Vector of weights of all particles
   std::vector<double> weights;
   
+  /**
+   * transformObservationsToMapSystem Transforms the observations from the coordinate system
+   * of the vehicle to the map coordinate system.
+   * @param particle Current particle
+   * @param observations Vector of the landmark observations of the car
+   * @param observations_on_map Vector in which the transformed observations are stored
+   */
+  void transformObservationsToMapSystem(Particle particle, std::vector<LandmarkObs> observations, std::vector<LandmarkObs>& observations_on_map);
+  
+  /**
+   * getLandmarksInRange Adds only landmarks of map to landmarks_in_range vector if they are in
+   * the sensor range of the current particle. If none landmarks are in range but the vehicle did
+   * observe some, the complete landmarks list is returned.
+   *
+   * Furthermore, the function translates the landmarks objects from Map::single_landmark_s to LandmarkObs.
+   *
+   * @param particle Current particle
+   * @param landmarks Vector of all landmarks of the map
+   * @param landmarks_in_range Vector of landmarks where all landmarks in range are stored to.
+   * @param sensorRange Range of the sensor
+   * @param observationSize Size of the observations vector
+   */
+  void getLandmarksInRange(Particle particle, std::vector<Map::single_landmark_s> landmarks, std::vector<LandmarkObs>& landmarks_in_range, double sensorRange, const int observationSize);
+  
 public:
   
   // Set of current particles
