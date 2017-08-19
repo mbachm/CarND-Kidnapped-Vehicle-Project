@@ -55,6 +55,9 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
   double std_theta = std_pos[2];
   
   //new number generator for each run
+  normal_distribution<double> dist_x(0, std_x);
+  normal_distribution<double> dist_y(0, std_y);
+  normal_distribution<double> dist_theta(0, std_theta);
   default_random_engine gen;
   
   for(int i = 0; i < num_particles; ++i) {
@@ -79,13 +82,9 @@ void ParticleFilter::prediction(double delta_t, double std_pos[], double velocit
       particles[i].y += distance_in_time * sin(yaw_rate);
     }
     
-    normal_distribution<double> dist_x(particles[i].x, std_x);
-    normal_distribution<double> dist_y(particles[i].y, std_y);
-    normal_distribution<double> dist_theta(particles[i].theta, std_theta);
-    
-    particles[i].x = dist_x(gen);
-    particles[i].y = dist_y(gen);
-    particles[i].theta = dist_theta(gen);
+    particles[i].x += dist_x(gen);
+    particles[i].y += dist_y(gen);
+    particles[i].theta += dist_theta(gen);
     
     //Uncomment to debug
     //cout << "particle " << i << " (" << particles[i].x << ", " << particles[i].y << ", " << particles[i].theta << ")" << endl;
@@ -114,34 +113,21 @@ void ParticleFilter::dataAssociation(std::vector<LandmarkObs> predicted, std::ve
 void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
                                    std::vector<LandmarkObs> observations, Map map_landmarks) {
   double totalWeight = 0.0;
+  
+  //calculate values needed for the weight calculation, which are the same for all particles, landmarks, and observations.
+  const double std_x = std_landmark[0];
+  const double std_y = std_landmark[1];
+  const double basePart = 1 / (2 * M_PI * std_x * std_y);
+  const double sigma_2x2 = 2 * pow(std_x, 2);
+  const double sigma_2y2 = 2 * pow(std_y, 2);
+  
   for(int i = 0; i < num_particles; ++i) {
-    //calculate values just once
-    const double theta = particles[i].theta;
-    const double sin_t = sin(theta);
-    const double cos_t = cos(theta);
-    
     vector<LandmarkObs> observations_on_map;
-    for(LandmarkObs observation: observations) {
-      LandmarkObs obs;
-      //Transforming observations to map coordinate system
-      obs.id = observation.id;
-      obs.x = particles[i].x + cos_t * observation.x - sin_t * observation.y;
-      obs.y = particles[i].y + sin_t * observation.x + cos_t * observation.y;
-      observations_on_map.push_back(obs);
-    }
+    transformObservationsToMapSystem(particles[i], observations, observations_on_map);
     
     //filter unnecessary map_landmarks
     vector<LandmarkObs> landmarks_in_range;
-    for (Map::single_landmark_s landmark: map_landmarks.landmark_list) {
-      const double landmarkDist = sqrt(pow(landmark.x_f - particles[i].x, 2) + pow(landmark.y_f - particles[i].y, 2));
-      if (landmarkDist <= sensor_range) {
-        LandmarkObs obs;
-        obs.id = landmark.id_i;
-        obs.x = landmark.x_f;
-        obs.y = landmark.y_f;
-        landmarks_in_range.push_back(obs);
-      }
-    }
+    getLandmarksInRange(particles[i], map_landmarks.landmark_list, landmarks_in_range, sensor_range, observations.size());
     
     //Uncomment to debug
     //if(landmarks_in_range.size() < observations_on_map.size()) {
@@ -151,8 +137,6 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
     dataAssociation(landmarks_in_range, observations_on_map);
     
     //calculate particles final weight
-    const double std_x = std_landmark[0];
-    const double std_y = std_landmark[1];
     double temp_weight = 1.0;
     
     //Comment if you don't need associations
@@ -160,10 +144,6 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
     vector<int> associations;
     vector<double> sense_x;
     vector<double> sense_y;
-    
-    const double basePart = 1 / (2 * M_PI * std_x * std_y);
-    const double sigma_2x2 = 2 * pow(std_x, 2);
-    const double sigma_2y2 = 2 * pow(std_y, 2);
     
     for(LandmarkObs obs: observations_on_map) {
       const double assumed_landmark_x = map_landmarks.landmark_list[obs.id - 1].x_f;
@@ -184,7 +164,6 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
   for (int i = 0; i < num_particles; ++i) {
     const double particleWeight = particles[i].weight / totalWeight;
     particles[i].weight = particleWeight;
-    weights[i] = particleWeight;
     
     //Comment if you don't need associations
     particles[i] = SetAssociations(particles[i], particles[i].associations, particles[i].sense_x, particles[i].sense_y);
@@ -208,6 +187,48 @@ void ParticleFilter::resample() {
   
   particles.clear();
   particles = new_list;
+}
+
+void ParticleFilter::transformObservationsToMapSystem(Particle particle, vector<LandmarkObs> observations, vector<LandmarkObs>& observations_on_map) {
+  //calculate values just once
+  const double theta = particle.theta;
+  const double sin_t = sin(theta);
+  const double cos_t = cos(theta);
+  
+  for(LandmarkObs observation: observations) {
+    LandmarkObs obs;
+    //Transforming observations to map coordinate system
+    obs.id = observation.id;
+    obs.x = particle.x + cos_t * observation.x - sin_t * observation.y;
+    obs.y = particle.y + sin_t * observation.x + cos_t * observation.y;
+    observations_on_map.push_back(obs);
+  }
+}
+
+void ParticleFilter::getLandmarksInRange(Particle particle, vector<Map::single_landmark_s> landmarks, vector<LandmarkObs>& landmarks_in_range, double sensor_range, const int observationSize) {
+  for (Map::single_landmark_s landmark: landmarks) {
+    const double landmarkDist = sqrt(pow(landmark.x_f - particle.x, 2) + pow(landmark.y_f - particle.y, 2));
+    if (landmarkDist <= sensor_range) {
+      LandmarkObs obs;
+      obs.id = landmark.id_i;
+      obs.x = landmark.x_f;
+      obs.y = landmark.y_f;
+      landmarks_in_range.push_back(obs);
+    }
+  }
+  
+  //Fallback if none landmarks are in range of particel, but there are some landmarks
+  // --> Make sure that dataAssociation will work
+  // --> If this happens, the performance is worse
+  if(landmarks_in_range.empty() && observationSize > 0) {
+    for (Map::single_landmark_s landmark: landmarks) {
+      LandmarkObs obs;
+      obs.id = landmark.id_i;
+      obs.x = landmark.x_f;
+      obs.y = landmark.y_f;
+      landmarks_in_range.push_back(obs);
+    }
+  }
 }
 
 Particle ParticleFilter::SetAssociations(Particle particle, std::vector<int> associations, std::vector<double> sense_x, std::vector<double> sense_y)
