@@ -6,3 +6,7 @@ Debug
 PARTICLE_FILTER.build
 PARTICLE_FILTER.xcodeproj
 cmake_install.cmake
+
+#clion
+.idea/
+cmake-build-debug/
